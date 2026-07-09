@@ -49,6 +49,7 @@ const getMe = async (req, res) => {
     const user = await User.findById(req.user.id).select("-passwordHash");
     if (user) {
       res.json({ success: true, user });
+      console.log("User profile retrieved:");
     } else {
       res.status(404).json({ success: false, error: "User not found" });
     }
