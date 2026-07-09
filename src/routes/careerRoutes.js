@@ -11,22 +11,36 @@ const {
   updateApplicationStatus,
 } = require("../controllers/careerController");
 const { protect, authorize } = require("../middleware/auth");
+const upload = require("../middleware/upload");
 
-// job application review routes (admin) must be registered before /:slug
-router.get("/applications/all", protect, authorize("Super Admin", "Editor"), getApplications);
-router.put("/applications/:id/status", protect, authorize("Super Admin", "Editor"), updateApplicationStatus);
+// ── Application review routes (MUST be before /:slug to avoid conflict) ──
+router.get(
+  "/applications/all",
+  protect,
+  authorize("Super Admin", "Editor"),
+  getApplications
+);
+router.put(
+  "/applications/:id/status",
+  protect,
+  authorize("Super Admin", "Editor"),
+  updateApplicationStatus
+);
 
-// career posts routes
-router.route("/")
+// ── Career post CRUD ──
+router
+  .route("/")
   .get(getCareers)
   .post(protect, authorize("Super Admin", "Editor"), createCareer);
 
-router.route("/:slug")
+router
+  .route("/:slug")
   .get(getCareerBySlug)
   .put(protect, authorize("Super Admin", "Editor"), updateCareer)
   .delete(protect, authorize("Super Admin"), deleteCareer);
 
-// job application submission route
-router.post("/:slug/apply", createApplication);
+// ── Public application submission — accepts multipart/form-data with optional "resume" file ──
+// Multer handles up to 10MB PDF/DOCX; the controller then streams it to Cloudinary
+router.post("/:slug/apply", upload.single("resume"), createApplication);
 
 module.exports = router;

@@ -1,5 +1,6 @@
 const CareerPost = require("../models/CareerPost");
 const JobApplication = require("../models/JobApplication");
+const cloudinary = require("../config/cloudinary");
 
 // ==========================================
 // CAREER POSTS CONTROLLERS (CRUD)
@@ -85,9 +86,52 @@ const deleteCareer = async (req, res) => {
 // JOB APPLICATIONS CONTROLLERS
 // ==========================================
 
-// @desc    Submit a job application
+/**
+ * Helper: upload a Buffer to Cloudinary as a raw file (PDF, DOCX, etc.)
+ *
+ * IMPORTANT: For resource_type "raw", the file extension MUST be included in
+ * the public_id so the Cloudinary URL ends with .pdf / .docx etc., which lets
+ * the browser know the file type and download it with the correct name.
+ */
+const uploadResumeToCloudinary = (fileBuffer, originalName) => {
+  return new Promise((resolve, reject) => {
+    const path    = require("path");
+    const { Readable } = require("stream");
+
+    // Extract extension (.pdf, .docx, .doc) and sanitize the base name
+    const ext      = path.extname(originalName).toLowerCase();           // e.g. ".pdf"
+    const baseName = path.basename(originalName, ext)
+      .replace(/[^a-zA-Z0-9_-]/g, "_")                                   // safe chars only
+      .slice(0, 60);                                                       // limit length
+
+    // Include extension in public_id — Cloudinary will serve the URL with the extension
+    // e.g. kalpataru/resumes/resume_1720500000_MyCV.pdf
+    const publicId = `kalpataru/resumes/resume_${Date.now()}_${baseName}${ext}`;
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: "raw",     // serve file as-is (correct MIME type)
+        public_id: publicId,      // full path including extension
+        overwrite: false,
+      },
+      (error, result) => {
+        if (result) resolve(result);
+        else reject(error || new Error("Cloudinary upload failed with no error info"));
+      }
+    );
+
+    // Convert buffer → Readable stream and pipe into Cloudinary upload stream
+    const readable = new Readable();
+    readable.push(fileBuffer);
+    readable.push(null);
+    readable.pipe(uploadStream);
+  });
+};
+
+// @desc    Submit a job application (with optional resume file upload)
 // @route   POST /api/careers/:slug/apply
 // @access  Public
+// Body: multipart/form-data with fields: name, email, phone, coverNote + file field "resume"
 const createApplication = async (req, res) => {
   const { slug } = req.params;
   try {
@@ -96,8 +140,48 @@ const createApplication = async (req, res) => {
       return res.status(404).json({ success: false, error: "Career position not found" });
     }
 
+    // Debug log — helps diagnose missing body fields during development
+    console.log("[Apply] req.body:", req.body);
+    console.log("[Apply] req.file:", req.file ? req.file.originalname : "none");
+
+    // Safely extract text fields (req.body populated by multer for multipart/form-data)
+    const name      = (req.body.name      || "").trim();
+    const email     = (req.body.email     || "").trim();
+    const phone     = (req.body.phone     || "").trim();
+    const coverNote = (req.body.coverNote || "").trim();
+
+    // Validate required fields manually so we return a clear error
+    if (!name || !email || !phone) {
+      return res.status(400).json({
+        success: false,
+        error: "name, email and phone are required fields.",
+      });
+    }
+
+    let resumeUrl = "";
+    let resumeFileName = req.body.resumeFileName || "No file uploaded";
+
+    // If a resume file was attached via multer, upload it to Cloudinary
+    if (req.file) {
+      try {
+        const result = await uploadResumeToCloudinary(req.file.buffer, req.file.originalname);
+        resumeUrl = result.secure_url;
+        resumeFileName = req.file.originalname;
+      } catch (uploadError) {
+        console.error("Cloudinary resume upload failed:", uploadError.message);
+        // Don't block the application submission if Cloudinary upload fails
+        resumeFileName = req.file.originalname || resumeFileName;
+        resumeUrl = "";
+      }
+    }
+
     const applicationData = {
-      ...req.body,
+      name,
+      email,
+      phone,
+      coverNote,
+      resumeFileName,
+      resumeUrl,
       careerSlug: slug,
       roleTitle: career.title,
     };
@@ -110,7 +194,7 @@ const createApplication = async (req, res) => {
 };
 
 // @desc    Get all job applications
-// @route   GET /api/applications
+// @route   GET /api/careers/applications/all
 // @access  Private (Admin/Editor)
 const getApplications = async (req, res) => {
   try {
@@ -122,11 +206,11 @@ const getApplications = async (req, res) => {
 };
 
 // @desc    Update job application status
-// @route   PUT /api/applications/:id/status
+// @route   PUT /api/careers/applications/:id/status
 // @access  Private (Admin/Editor)
 const updateApplicationStatus = async (req, res) => {
   const { status } = req.body;
-  
+
   if (!["new", "shortlisted", "rejected", "hired"].includes(status)) {
     return res.status(400).json({ success: false, error: "Invalid status value" });
   }

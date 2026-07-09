@@ -71,4 +71,22 @@ const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || "development"} mode on port ${PORT}`);
+
+  // ── Cloudinary credential check ──
+  const cloudName  = process.env.CLOUDINARY_CLOUD_NAME;
+  const apiKey     = process.env.CLOUDINARY_API_KEY;
+  const apiSecret  = process.env.CLOUDINARY_API_SECRET;
+
+  const missingOrWrong = [];
+  if (!cloudName)  missingOrWrong.push("CLOUDINARY_CLOUD_NAME");
+  if (!apiKey || apiKey === cloudName) missingOrWrong.push("CLOUDINARY_API_KEY (wrong — same as cloud name!)");
+  if (!apiSecret)  missingOrWrong.push("CLOUDINARY_API_SECRET");
+
+  if (missingOrWrong.length > 0) {
+    console.warn("⚠️  Cloudinary NOT configured correctly. Missing / wrong values:");
+    missingOrWrong.forEach((k) => console.warn("   •", k));
+    console.warn("   Resume uploads will fail. Fix your .env file and restart.");
+  } else {
+    console.log(`✅  Cloudinary configured — cloud: ${cloudName}`);
+  }
 });
