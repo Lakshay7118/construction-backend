@@ -18,6 +18,28 @@ const getInquiries = async (req, res) => {
 const createInquiry = async (req, res) => {
   try {
     const inquiry = await Inquiry.create(req.body);
+
+    // Send thank-you email notification to the client via EmailJS template
+    const { sendEmailJSTemplate } = require("../config/mail");
+    const { name, email, projectType, city, message } = inquiry;
+
+    const templateParams = {
+      subject: `Thank you for contacting Kalpataru Constructions`,
+      client_email: email, // This allows EmailJS to send it directly to the customer
+      inquiry_name: name,
+      city: city,
+      project_type: projectType,
+      message: message,
+    };
+
+    sendEmailJSTemplate({
+      templateId: process.env.EMAILJS_TEMPLATE_ID_INQUIRY,
+      templateParams,
+    }).catch((mailErr) => {
+      console.error("Failed to send EmailJS client inquiry confirmation:", mailErr.message);
+    });
+
+
     res.status(201).json({ success: true, inquiry });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

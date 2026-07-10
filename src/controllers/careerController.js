@@ -187,6 +187,26 @@ const createApplication = async (req, res) => {
     };
 
     const application = await JobApplication.create(applicationData);
+
+    // Send thank-you email notification to the applicant via EmailJS template
+    const { sendEmailJSTemplate } = require("../config/mail");
+
+    const templateParams = {
+      subject: `Application Received - Kalpataru Constructions`,
+      client_email: email, // This allows EmailJS to send it directly to the applicant
+      applicant_name: name,
+      position_title: career.title,
+      resume_filename: resumeFileName,
+    };
+
+    sendEmailJSTemplate({
+      templateId: process.env.EMAILJS_TEMPLATE_ID_CARRIER,
+      templateParams,
+    }).catch((mailErr) => {
+      console.error("Failed to send EmailJS client application confirmation:", mailErr.message);
+    });
+
+
     res.status(201).json({ success: true, application });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
